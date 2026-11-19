@@ -1,0 +1,50 @@
+# Teddy Manager – eigenes Compose-Projekt neben TeddyCloud. Einstellungen in .env (Vorlage: .env.example).
+name: teddy-manager
+services:
+  teddy-manager:
+    container_name: teddy-manager
+    build: .
+    image: ${IMAGE:-teddy-manager:latest}             # oder fertiges Image, z. B. ghcr.io/<user>/teddy-manager:latest
+    ports:
+      - "${PORT:-8090}:8000"
+    environment:
+      TC_URL: ${TC_URL:-http://teddycloud:80}     # TeddyCloud-Web-API (HTTP) im gemeinsamen Docker-Netz
+      PUBLIC_URL: ${PUBLIC_URL:-}                # z. B. http://192.168.1.10:8090 (für die HTTP-Shortcuts-Datei)
+      TZ: ${TZ:-Europe/Berlin}
+      TM_FOLDER: ${TM_FOLDER:-_teddy-manager}       # eigener Ordner in TeddyClouds library/
+      IMG_FOLDER: ${IMG_FOLDER:-teddy-manager}      # eigener Ordner in TeddyClouds custom_img/
+      # „Zuletzt aufgelegt“: TeddyCloud-Log über den Socket-Proxy lesen (leer lassen = aus)
+      UPDATE_REPO: ${UPDATE_REPO:-}               # z. B. user/teddy-manager – zeigt neue Versionen in den Einstellungen
+      TC_LOG_URL: ${TC_LOG_URL-http://teddy-manager-logs:2375/containers/${TEDDYCLOUD_CONTAINER:-teddycloud}/logs}
+    volumes:
+      - ./data:/data                                              # eigene DB, Logs, Sicherungen, yt-dlp
+      - ${TEDDYCLOUD_DATA:-../teddycloud/data}/library:/library    # schreibt nur nach library/_teddy-manager/
+      - ${TEDDYCLOUD_DATA:-../teddycloud/data}/custom_img:/custom_img  # schreibt nur nach custom_img/teddy-manager/
+      - ${TEDDYCLOUD_DATA:-../teddycloud/data}/config:/tc-config:ro    # tonies.json lesen
+    networks: [teddycloud, logs]
+    restart: unless-stopped
+    logging:
+      driver: local
+      options: {max-size: "5m", max-file: "3"}
+
+  # Nur lesender Zugriff auf Container-Logs (für „Zuletzt aufgelegt“). Erreichbar ausschließlich im internen Netz „logs“.
+  teddy-manager-logs:
+    container_name: teddy-manager-logs
+    image: tecnativa/docker-socket-proxy:0.3.0
+    environment:
+      CONTAINERS: 1     # GET /containers/... (inkl. Logs) erlaubt
+      POST: 0           # keine schreibenden Aufrufe
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [logs]
+    restart: unless-stopped
+    logging:
+      driver: local
+      options: {max-size: "1m", max-file: "2"}
+
+networks:
+  logs:
+    internal: true
+  teddycloud:
+    external: true
+    name: ${TEDDYCLOUD_NETWORK:-teddynet}
